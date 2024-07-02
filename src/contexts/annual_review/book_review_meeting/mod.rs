@@ -1,9 +1,29 @@
+/// workflow "Book Review Meeting" = 
+///     input:
+///         UnvalidatedAnnualReviewInformation
+///         
+///         UnvalidatedLastAnnualReviewDate
+///         UnvalidatedClientAnnualReviewMeetingInformation
+///     Output:
+///         SendElectronicAnnualReviewInvite
+///         SendPostAnnualReviewInvite
+
+
+
+
+
+
+
+
+
 /// Workflow: Book Review Meeting
 /// Triggered by: 
-///     2 month prior to annual review due date scheduler
+///     2 month prior to annual review due date scheduler - 
 /// Primary input: 
-///     ClientContactInformation
-///     Annual review due date
+///     Annual Review Due Date
+///     Last Annual Review Date
+///     Client Contact Information
+///     
 /// 
 /// Step 1
 /// do ValidatedAnnualReviewDueDate

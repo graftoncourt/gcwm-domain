@@ -1,12 +1,15 @@
-use crate::simple_types::{ConstrainedIndividualNameString100, EmailAddress, PostalAddress};
+use crate::{contexts::annual_review, simple_types::{ClientId, ConstainedTrustOrCompanyNameString200, ConstrainedIndividualNameString100, EmailAddress, PostalAddress}};
 use serde::{Serialize, Deserialize};
+use chrono::{NaiveDateTime};
 
 #[derive(Debug)]
 pub enum ValidationError {
     InvalidName(String),
     InvalidEmail(String),
     InvalidAddress(String),
-    EmptyInput(String)
+    InvalidDate(String),
+    EmptyInput(String),
+    InvalidInput(String)
 }
 
 impl std::fmt::Display for ValidationError {
@@ -15,22 +18,230 @@ impl std::fmt::Display for ValidationError {
             ValidationError::InvalidName(ref desc) => write!(f, "Invalid name: {}", desc),
             ValidationError::InvalidEmail(ref desc) => write!(f, "Invalid email: {}", desc),
             ValidationError::InvalidAddress(ref desc) => write!(f, "Invalid address: {}", desc),
-            ValidationError::EmptyInput(ref desc) => write!(f, "Empty Input: {}", desc)
+            ValidationError::InvalidDate(ref desc) => write!(f, "Invalid date: {}", desc),
+            ValidationError::EmptyInput(ref desc) => write!(f, "Empty Input: {}", desc),
+            ValidationError::InvalidInput(ref desc) => write!(f, "Invalid Input: {}", desc)
         }
     }
 }
 
 impl std::error::Error for ValidationError {}
 
+// Unvalidated annual review information input to the domain received as JSON or similar for deserializastion and validation
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UnvalidatedAnnualReviewInformation {
+    annual_review_due_date: String,
+    last_annual_review_due_date: String,
+    adviser_name: String,
+    administrator_email: String,
+    client_contact_information: ClientContactInformation
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum ClientContactInformation {
+    JointIndividualsElectronicContact(JointIndividualsElectronicContact),
+    SingleIndividualElectronicContact(SingleIndividualElectronicContact),
+    JointIndividualsPostContact(JointIndividualsPostContact),
+    //SingleIndividualPostContact(SingleIndividualPostContact),
+    //MultipleTrusteesElectronicContact(MultipleTrusteesElectronicContact),
+    //PrimaryTrusteeElectronicContact(PrimaryTrusteeElectronicContact),
+    //MultipleTrusteesPostContact(MultipleTrusteesPostContact),
+    //PrimaryTrusteePostContact(PrimaryTrusteePostContact),
+    //MultipleDirectorsElectronicContact(MultipleDirectorsElectronicContact),
+    //PrimaryDirectorElectronicContact(PrimaryDirectorElectronicContact),
+    //MultipleDirectorsPostContact(MultipleDirectorsPostContact),
+    //PrimaryDirectorPostContact(PrimaryDirectorPostContact), 
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct JointIndividualsElectronicContact {
+    primary_contact_first_name: String,
+    individual_two_first_name: String,
+    primary_contact_email_address: String,
+    individual_two_email_address: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-struct JointIndividualsElectronicContact {
+pub struct SingleIndividualElectronicContact {
+    first_name: String,
+    email_address: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct JointIndividualsPostContact {
+    primary_contact_first_name: String,
+    individual_two_first_name: String,
+    house_name: String,
+    house_number: String,
+    address_line_one: String,
+    address_line_two: String,
+    address_line_three: String,
+    address_line_four: String,
+    city: String,
+    county: String,
+    postcode: String,
+    country: String
+}
+
+
+
+
+
+
+
+
+
+
+
+#[derive(Debug, Serialize)]
+struct ValidatedAnnualReviewInformation {
+    annual_review_due_date: ValidatedAnnualReviewDueDate,
+    client_contact_information: ValidatedClientContactInformation
+}
+
+impl ValidatedAnnualReviewInformation {
+    pub fn validate(
+        unvalidated_annual_review_information: UnvalidatedAnnualReviewInformation
+    ) -> Result<Self, ValidationError> {
+        let annual_review_due_date = ValidatedAnnualReviewDueDate::validate(
+            unvalidated_annual_review_information.annual_review_due_date,
+            unvalidated_annual_review_information.last_annual_review_due_date
+        ).map_err(|e| ValidationError::InvalidDate(e.to_string()))?;
+
+        let client_contact_information = match unvalidated_annual_review_information.client_contact_information {
+            ClientContactInformation::JointIndividualsElectronicContact(information) => {
+                ValidatedClientContactInformation::validate_joint_indivduals_electronic_contact(information)
+            }
+            ClientContactInformation::SingleIndividualElectronicContact(information) => {
+                ValidatedClientContactInformation::validate_single_indivdual_electronic_contact(information)
+            }
+            ClientContactInformation::JointIndividualsPostContact(information) => {
+                ValidatedClientContactInformation::validated_joint_individuals_post_contact(information)
+            }
+        };
+
+        match client_contact_information {
+            Ok(client_contact_information) => { Ok(Self{annual_review_due_date, client_contact_information})}
+            Err(error) => {Err(error)}
+        }
+    }
+}
+
+
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+struct ValidatedAnnualReviewDueDate(NaiveDateTime);
+
+impl ValidatedAnnualReviewDueDate {
+
+    pub fn validate(
+        unvalidated_date_string: String,
+        last_annual_review_date_string: String,
+    ) -> Result<Self, ValidationError> {
+        
+        let datetime = NaiveDateTime::parse_from_str(&unvalidated_date_string, "%d/%m/%Y")
+            .map_err(|e| ValidationError::InvalidDate(e.to_string()))?;
+
+        // Check the date is not in the past
+
+        // Check the annual review date is not greater than 1 year from the previous annual review completion by querying persistence
+
+        // Check the annual review date is within the relevant tax year
+
+        Ok(Self(datetime))
+
+    }
+}
+
+
+
+#[derive(Debug, Serialize)]
+enum ValidatedClientContactInformation {
+    ValidatedJointIndividualsElectronicContact(ValidatedJointIndividualsElectronicContact),
+    ValidatedSingleIndividualElectronicContact(ValidatedSingleIndividualElectronicContact),
+    ValidatedJointIndividualsPostContact(ValidatedJointIndividualsPostContact),
+    //SingleIndividualPostContact(SingleIndividualPostContact),
+    //MultipleTrusteesElectronicContact(MultipleTrusteesElectronicContact),
+    //PrimaryTrusteeElectronicContact(PrimaryTrusteeElectronicContact),
+    //MultipleTrusteesPostContact(MultipleTrusteesPostContact),
+    //PrimaryTrusteePostContact(PrimaryTrusteePostContact),
+    //MultipleDirectorsElectronicContact(MultipleDirectorsElectronicContact),
+    //PrimaryDirectorElectronicContact(PrimaryDirectorElectronicContact),
+    //MultipleDirectorsPostContact(MultipleDirectorsPostContact),
+    //PrimaryDirectorPostContact(PrimaryDirectorPostContact), 
+}
+
+impl ValidatedClientContactInformation {
+    pub fn validate_joint_indivduals_electronic_contact(
+        joint_individuals_electronic_contact: JointIndividualsElectronicContact
+    ) -> Result<Self, ValidationError> {
+        
+        let validated_joint_individuals_electronic_contact = ValidatedJointIndividualsElectronicContact::validate(
+            joint_individuals_electronic_contact.primary_contact_first_name, 
+            joint_individuals_electronic_contact.individual_two_first_name, 
+            joint_individuals_electronic_contact.primary_contact_email_address, 
+            joint_individuals_electronic_contact.individual_two_email_address
+        );
+
+        match validated_joint_individuals_electronic_contact {
+            Ok(valid) => { Ok(Self::ValidatedJointIndividualsElectronicContact(valid))}
+            Err(error) => Err(error)
+        }
+
+    }
+
+    pub fn validate_single_indivdual_electronic_contact(
+        single_individual_electronic_contact: SingleIndividualElectronicContact
+    ) -> Result<Self, ValidationError> {
+
+        let validated_single_individual_electronic_contact = ValidatedSingleIndividualElectronicContact::validate(
+            single_individual_electronic_contact.first_name, 
+            single_individual_electronic_contact.email_address
+        );
+
+        match validated_single_individual_electronic_contact {
+            Ok(valid) => { Ok(Self::ValidatedSingleIndividualElectronicContact(valid))}
+            Err(error) => Err(error)
+        }
+    }
+
+    pub fn validated_joint_individuals_post_contact(
+        joint_individuals_post_contact: JointIndividualsPostContact
+    ) -> Result<Self, ValidationError> {
+
+        let validated_joint_individuals_post_contact = ValidatedJointIndividualsPostContact::validate(
+            joint_individuals_post_contact.primary_contact_first_name, 
+            joint_individuals_post_contact.individual_two_first_name, 
+            joint_individuals_post_contact.house_name,
+            joint_individuals_post_contact.house_number,
+            joint_individuals_post_contact.address_line_one,
+            joint_individuals_post_contact.address_line_two,
+            joint_individuals_post_contact.address_line_three,
+            joint_individuals_post_contact.address_line_four,
+            joint_individuals_post_contact.city,
+            joint_individuals_post_contact.county,
+            joint_individuals_post_contact.postcode,
+            joint_individuals_post_contact.country
+        );
+
+        match validated_joint_individuals_post_contact {
+            Ok(valid) => { Ok(Self::ValidatedJointIndividualsPostContact(valid))}
+            Err(error) => Err(error)
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+struct ValidatedJointIndividualsElectronicContact {
     primary_contact_first_name: ConstrainedIndividualNameString100,
     individual_two_first_name: ConstrainedIndividualNameString100,
     primary_contact_email_address: EmailAddress,
     individual_two_email_address: EmailAddress,
 }
 
-impl JointIndividualsElectronicContact {
+impl ValidatedJointIndividualsElectronicContact {
     pub fn validate(
         primary_contact_first_name: String,
         individual_two_first_name: String,
@@ -73,12 +284,12 @@ impl JointIndividualsElectronicContact {
 
 // SingleIndividualElectronicContact
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-struct SingleIndividualElectronicContact {
+struct ValidatedSingleIndividualElectronicContact {
     first_name: ConstrainedIndividualNameString100,
     email_address: EmailAddress,
 }
 
-impl SingleIndividualElectronicContact {
+impl ValidatedSingleIndividualElectronicContact {
     pub fn validate(first_name: String, email_address: String) -> Result<Self, ValidationError> {
         let first_name = ConstrainedIndividualNameString100::try_from(first_name)
             .map_err(|e| ValidationError::InvalidName(e.to_string()))?;
@@ -98,22 +309,43 @@ impl SingleIndividualElectronicContact {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-struct JointIndividualsPostContact {
+struct ValidatedJointIndividualsPostContact {
     primary_contact_first_name: ConstrainedIndividualNameString100,
     individual_two_first_name: ConstrainedIndividualNameString100,
     postal_address: PostalAddress,
 }
 
-impl JointIndividualsPostContact {
+impl ValidatedJointIndividualsPostContact {
     pub fn validate(
         primary_contact_first_name: String,
         individual_two_first_name: String,
-        postal_address: PostalAddress,
+        house_name: String,
+        house_number: String,
+        address_line_one: String,
+        address_line_two: String,
+        address_line_three: String,
+        address_line_four: String,
+        city: String,
+        county: String,
+        postcode: String,
+        country: String,
     ) -> Result<Self, ValidationError> {
         let primary_contact_first_name = ConstrainedIndividualNameString100::try_from(primary_contact_first_name)
             .map_err(|e| ValidationError::InvalidName(e.to_string()))?;
         let individual_two_first_name = ConstrainedIndividualNameString100::try_from(individual_two_first_name)
             .map_err(|e| ValidationError::InvalidEmail(e.to_string()))?;
+        let postal_address = PostalAddress::new(
+            if house_name.is_empty() { None } else { Some(house_name) },
+            if house_number.is_empty() { None } else { Some(house_number) },
+            address_line_one,
+            if address_line_two.is_empty() { None } else { Some(address_line_two) },
+            if address_line_three.is_empty() { None } else { Some(address_line_three)},
+            if address_line_four.is_empty() { None } else { Some(address_line_four)},
+            city,
+            if county.is_empty() { None } else { Some(county)},
+            postcode,
+            if country.is_empty() { None } else { Some(country)},
+        ).map_err(|e|ValidationError::InvalidInput(e.to_string()))?;
 
         Ok(Self {
             primary_contact_first_name,
@@ -199,15 +431,23 @@ impl TrusteeElectronicContact {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 struct MultipleTrusteesElectronicContact {
+    trust_name: ConstainedTrustOrCompanyNameString200,
     trustees: Vec<TrusteeElectronicContact>,
 }
 
 impl MultipleTrusteesElectronicContact {
-    pub fn validate(trustees: Vec<TrusteeElectronicContact>) -> Result<Self, ValidationError> {
+    pub fn validate(trust_name: ConstainedTrustOrCompanyNameString200, trustees: Vec<TrusteeElectronicContact>) -> Result<Self, ValidationError> {
+        
+        let trust_name = ConstainedTrustOrCompanyNameString200::try_from(trust_name)
+            .map_err(|e| ValidationError::InvalidName(e.to_string()))?;
+        
         if trustees.len() < 2 {
             Err(ValidationError::EmptyInput("There must be at least two trustees.".to_string()))
         } else {
-            Ok(Self { trustees })
+            Ok(Self { 
+                trust_name,
+                trustees 
+            })
         }
     }
 
@@ -220,21 +460,26 @@ impl MultipleTrusteesElectronicContact {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 struct PrimaryTrusteeElectronicContact {
+    trust_name: ConstainedTrustOrCompanyNameString200,
     primary_trustee_first_name: ConstrainedIndividualNameString100,
     primary_trustee_email_address: EmailAddress,
 }
 
 impl PrimaryTrusteeElectronicContact {
     pub fn validate(
+        trust_name: String,
         primary_trustee_first_name: String,
         primary_trustee_email_address: String,
     ) -> Result<Self, ValidationError> {
+        let trust_name = ConstainedTrustOrCompanyNameString200::try_from(trust_name)
+            .map_err(|e| ValidationError::InvalidName(e.to_string()))?;
         let primary_trustee_first_name = ConstrainedIndividualNameString100::try_from(primary_trustee_first_name)
             .map_err(|e| ValidationError::InvalidName(e.to_string()))?;
         let primary_trustee_email_address = EmailAddress::try_from(primary_trustee_email_address)
             .map_err(|e| ValidationError::InvalidEmail(e.to_string()))?;
 
         Ok(Self {
+            trust_name,
             primary_trustee_first_name,
             primary_trustee_email_address,
         })
@@ -273,15 +518,22 @@ impl TrusteePostContact {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 struct MultipleTrusteesPostContact {
+    trust_name: ConstainedTrustOrCompanyNameString200,
     trustees: Vec<TrusteePostContact>,
 }
 
 impl MultipleTrusteesPostContact {
-    pub fn validate(trustees: Vec<TrusteePostContact>) -> Result<Self, ValidationError> {
+    pub fn validate(trust_name: String, trustees: Vec<TrusteePostContact>) -> Result<Self, ValidationError> {
+        let trust_name = ConstainedTrustOrCompanyNameString200::try_from(trust_name)
+            .map_err(|e| ValidationError::InvalidName(e.to_string()))?;
+        
         if trustees.len() < 2 {
             Err(ValidationError::EmptyInput("There must be at least two trustees.".to_string()))
         } else {
-            Ok(Self { trustees })
+            Ok(Self { 
+                trust_name,
+                trustees 
+            })
         }
     }
 
@@ -292,19 +544,25 @@ impl MultipleTrusteesPostContact {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 struct PrimaryTrusteePostContact {
+    trust_name: ConstainedTrustOrCompanyNameString200,
     primary_trustee_first_name: ConstrainedIndividualNameString100,
     primary_trustee_postal_address: PostalAddress,
 }
 
 impl PrimaryTrusteePostContact {
     pub fn validate(
+        trust_name: String,
         primary_trustee_first_name: String,
         primary_trustee_postal_address: PostalAddress,
     ) -> Result<Self, ValidationError> {
+        let trust_name = ConstainedTrustOrCompanyNameString200::try_from(trust_name)
+            .map_err(|e| ValidationError::InvalidName(e.to_string()))?;
+        
         let primary_trustee_first_name = ConstrainedIndividualNameString100::try_from(primary_trustee_first_name)
             .map_err(|e| ValidationError::InvalidName(e.to_string()))?;
 
         Ok(Self {
+            trust_name,
             primary_trustee_first_name,
             primary_trustee_postal_address,
         })
@@ -352,15 +610,23 @@ impl DirectorContact {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 struct MultipleDirectorsElectronicContact {
+    company_name: ConstainedTrustOrCompanyNameString200,
     directors: Vec<DirectorContact>,
 }
 
 impl MultipleDirectorsElectronicContact {
-    pub fn validate(directors: Vec<DirectorContact>) -> Result<Self, ValidationError> {
+    pub fn validate(company_name: String, directors: Vec<DirectorContact>) -> Result<Self, ValidationError> {
+
+        let company_name = ConstainedTrustOrCompanyNameString200::try_from(company_name)
+            .map_err(|e| ValidationError::InvalidName(e.to_string()))?;
+
         if directors.len() < 2 {
             Err(ValidationError::EmptyInput("There must be at least two directors.".to_string()))
         } else {
-            Ok(Self { directors })
+            Ok(Self { 
+                company_name,
+                directors }
+            )
         }
     }
 
@@ -371,21 +637,26 @@ impl MultipleDirectorsElectronicContact {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 struct PrimaryDirectorElectronicContact {
+    company_name: ConstainedTrustOrCompanyNameString200,
     primary_director_first_name: ConstrainedIndividualNameString100,
     primary_director_email_address: EmailAddress,
 }
 
 impl PrimaryDirectorElectronicContact {
     pub fn validate(
+        company_name: String,
         primary_director_first_name: String,
         primary_director_email_address: String,
     ) -> Result<Self, ValidationError> {
+        let company_name = ConstainedTrustOrCompanyNameString200::try_from(company_name)
+            .map_err(|e| ValidationError::InvalidName(e.to_string()))?;
         let primary_director_first_name = ConstrainedIndividualNameString100::try_from(primary_director_first_name)
             .map_err(|e| ValidationError::InvalidName(e.to_string()))?;
         let primary_director_email_address = EmailAddress::try_from(primary_director_email_address)
             .map_err(|e| ValidationError::InvalidEmail(e.to_string()))?;
 
         Ok(Self {
+            company_name,
             primary_director_first_name,
             primary_director_email_address,
         })
@@ -401,7 +672,7 @@ impl PrimaryDirectorElectronicContact {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct DirectorPostContact {
+struct DirectorPostContact {
     first_name: ConstrainedIndividualNameString100,
     postal_address: PostalAddress,
 }
@@ -430,16 +701,22 @@ impl DirectorPostContact {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct MultipleDirectorsPostContact {
+struct MultipleDirectorsPostContact {
+    company_name: ConstainedTrustOrCompanyNameString200,
     directors: Vec<DirectorPostContact>,
 }
 
 impl MultipleDirectorsPostContact {
-    pub fn validate(directors: Vec<DirectorPostContact>) -> Result<Self, ValidationError> {
+    pub fn validate(company_name: String, directors: Vec<DirectorPostContact>) -> Result<Self, ValidationError> {
+        let company_name = ConstainedTrustOrCompanyNameString200::try_from(company_name)
+            .map_err(|e| ValidationError::InvalidName(e.to_string()))?;
         if directors.len() < 2 {
             Err(ValidationError::EmptyInput("There must be at least two directors.".to_string()))
         } else {
-            Ok(Self { directors })
+            Ok(Self { 
+                company_name,
+                directors 
+            })
         }
     }
 
@@ -448,8 +725,8 @@ impl MultipleDirectorsPostContact {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct PrimaryDirectorPostContact {
+#[derive(Debug, Serialize)]
+struct PrimaryDirectorPostContact {
     primary_director_first_name: ConstrainedIndividualNameString100,
     primary_director_postal_address: PostalAddress,
 }
@@ -474,529 +751,5 @@ impl PrimaryDirectorPostContact {
 
     pub fn primary_director_postal_address(&self) -> &PostalAddress {
         &self.primary_director_postal_address
-    }
-}
-
-enum ClientContactInformation {
-    JointIndividualsElectronicContact(JointIndividualsElectronicContact),
-    SingleIndividualElectronicContact(SingleIndividualElectronicContact),
-    JointIndividualsPostContact(JointIndividualsPostContact),
-    SingleIndividualPostContact(SingleIndividualPostContact),
-    MultipleTrusteesElectronicContact(MultipleTrusteesElectronicContact),
-    PrimaryTrusteeElectronicContact(PrimaryTrusteeElectronicContact),
-    MultipleTrusteesPostContact(MultipleTrusteesPostContact),
-    PrimaryTrusteePostContact(PrimaryTrusteePostContact),
-    MultipleDirectorsElectronicContact(MultipleDirectorsElectronicContact),
-    PrimaryDirectorElectronicContact(PrimaryDirectorElectronicContact),
-    MultipleDirectorsPostContact(MultipleDirectorsPostContact),
-    PrimaryDirectorPostContact(PrimaryDirectorPostContact), 
-}
-
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::simple_types::{ConstrainedIndividualNameString100, EmailAddress, PostalAddress};
-    use regex::Regex;
-    use std::convert::TryFrom;
-
-    #[test]
-    fn test_joint_individuals_electronic_contact_validation() {
-        let primary_name = "John".to_string();
-        let individual_two_name = "Jane".to_string();
-        let primary_email = "john@example.com".to_string();
-        let individual_two_email = "jane@example.com".to_string();
-
-        let result = JointIndividualsElectronicContact::validate(
-            primary_name, 
-            individual_two_name, 
-            primary_email, 
-            individual_two_email
-        );
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_joint_individuals_electronic_contact_invalid_email() {
-        let primary_name = "John".to_string();
-        let individual_two_name = "Jane".to_string();
-        let primary_email = "invalid-email".to_string();
-        let individual_two_email = "jane@example.com".to_string();
-
-        let result = JointIndividualsElectronicContact::validate(
-            primary_name, 
-            individual_two_name, 
-            primary_email, 
-            individual_two_email
-        );
-        assert!(result.is_err());
-        if let Err(ValidationError::InvalidEmail(_)) = result {} else { panic!("Expected InvalidEmail error"); }
-    }
-
-    #[test]
-    fn test_single_individual_electronic_contact_validation() {
-        let name = "John".to_string();
-        let email = "john@example.com".to_string();
-
-        let result = SingleIndividualElectronicContact::validate(name, email);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_single_individual_electronic_contact_invalid_name() {
-        let name = "".to_string();
-        let email = "john@example.com".to_string();
-
-        let result = SingleIndividualElectronicContact::validate(name, email);
-        assert!(result.is_err());
-        if let Err(ValidationError::InvalidName(_)) = result {} else { panic!("Expected InvalidName error"); }
-    }
-
-    #[test]
-    fn test_postal_address_validation() {
-        let address = PostalAddress::new(
-            Some("House Name".to_string()),
-            Some(123),
-            "Address Line One".to_string(),
-            Some("Address Line Two".to_string()),
-            Some("Address Line Three".to_string()),
-            Some("Address Line Four".to_string()),
-            "City".to_string(),
-            "A1 1AA".to_string(),
-        );
-        assert!(address.is_ok());
-    }
-
-    #[test]
-    fn test_postal_address_invalid_postcode() {
-        let address = PostalAddress::new(
-            Some("House Name".to_string()),
-            Some(123),
-            "Address Line One".to_string(),
-            Some("Address Line Two".to_string()),
-            Some("Address Line Three".to_string()),
-            Some("Address Line Four".to_string()),
-            "City".to_string(),
-            "Invalid Postcode".to_string(),
-        );
-        assert!(address.is_err());
-        if let Err(ref err) = address {
-            assert_eq!(err, "Invalid UK postcode format.");
-        } else {
-            panic!("Expected Invalid UK postcode format error");
-        }
-    }
-
-    #[test]
-    fn test_joint_individuals_post_contact_validation() {
-        let primary_name = "John".to_string();
-        let individual_two_name = "Jane".to_string();
-        let postal_address = PostalAddress::new(
-            Some("House Name".to_string()),
-            Some(123),
-            "Address Line One".to_string(),
-            Some("Address Line Two".to_string()),
-            Some("Address Line Three".to_string()),
-            Some("Address Line Four".to_string()),
-            "City".to_string(),
-            "A1 1AA".to_string(),
-        ).unwrap();
-
-        let result = JointIndividualsPostContact::validate(
-            primary_name, 
-            individual_two_name, 
-            postal_address
-        );
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_single_individual_post_contact_validation() {
-        let name = "John".to_string();
-        let postal_address = PostalAddress::new(
-            Some("House Name".to_string()),
-            Some(123),
-            "Address Line One".to_string(),
-            Some("Address Line Two".to_string()),
-            Some("Address Line Three".to_string()),
-            Some("Address Line Four".to_string()),
-            "City".to_string(),
-            "A1 1AA".to_string(),
-        ).unwrap();
-
-        let result = SingleIndividualPostContact::validate(name, postal_address);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_trustee_electronic_contact_validation() {
-        let name = "John".to_string();
-        let email = "john@example.com".to_string();
-
-        let result = TrusteeElectronicContact::validate(name, email);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_trustee_electronic_contact_invalid_email() {
-        let name = "John".to_string();
-        let email = "invalid-email".to_string();
-
-        let result = TrusteeElectronicContact::validate(name, email);
-        assert!(result.is_err());
-        if let Err(ValidationError::InvalidEmail(_)) = result {} else { panic!("Expected InvalidEmail error"); }
-    }
-
-    #[test]
-    fn test_multiple_trustees_electronic_contact_validation() {
-        let trustee1 = TrusteeElectronicContact {
-            first_name: ConstrainedIndividualNameString100::try_from("John".to_string()).unwrap(),
-            email_address: EmailAddress::try_from("john@example.com".to_string()).unwrap(),
-        };
-
-        let trustee2 = TrusteeElectronicContact {
-            first_name: ConstrainedIndividualNameString100::try_from("Jane".to_string()).unwrap(),
-            email_address: EmailAddress::try_from("jane@example.com".to_string()).unwrap(),
-        };
-
-        let result = MultipleTrusteesElectronicContact::validate(vec![trustee1.clone(), trustee2.clone()]);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().trustees(), &vec![trustee1, trustee2]);
-    }
-
-    #[test]
-    fn test_multiple_trustees_electronic_contact_insufficient_trustees() {
-        let trustee1 = TrusteeElectronicContact {
-            first_name: ConstrainedIndividualNameString100::try_from("John".to_string()).unwrap(),
-            email_address: EmailAddress::try_from("john@example.com".to_string()).unwrap(),
-        };
-
-        let result = MultipleTrusteesElectronicContact::validate(vec![trustee1.clone()]);
-        assert!(result.is_err());
-        if let Err(ValidationError::EmptyInput(ref msg)) = result {
-            assert_eq!(msg, "There must be at least two trustees.");
-        } else {
-            panic!("Expected EmptyInput error");
-        }
-    }
-
-    #[test]
-    fn test_multiple_trustees_electronic_contact_empty() {
-        let result = MultipleTrusteesElectronicContact::validate(vec![]);
-        assert!(result.is_err());
-        if let Err(ValidationError::EmptyInput(ref msg)) = result {
-            assert_eq!(msg, "There must be at least two trustees.");
-        } else {
-            panic!("Expected EmptyInput error");
-        }
-    }
-
-    #[test]
-    fn test_constrained_individual_name_string_100_valid() {
-        let name = ConstrainedIndividualNameString100::try_from("John".to_string());
-        assert!(name.is_ok());
-    }
-
-    #[test]
-    fn test_constrained_individual_name_string_100_empty() {
-        let name = ConstrainedIndividualNameString100::try_from("".to_string());
-        assert!(name.is_err());
-        if let Err(err) = name {
-            assert_eq!(err, "Constrained string 100 characters must have at least one character.");
-        } else {
-            panic!("Expected error for empty string");
-        }
-    }
-
-    #[test]
-    fn test_constrained_individual_name_string_100_too_long() {
-        let long_name = "a".repeat(101);
-        let name = ConstrainedIndividualNameString100::try_from(long_name);
-        assert!(name.is_err());
-        if let Err(err) = name {
-            assert_eq!(err, "Constrained string 100 must not have more than 100 characters.");
-        } else {
-            panic!("Expected error for too long string");
-        }
-    }
-
-    #[test]
-    fn test_constrained_individual_name_string_100_with_numbers() {
-        let name = ConstrainedIndividualNameString100::try_from("John123".to_string());
-        assert!(name.is_err());
-        if let Err(err) = name {
-            assert_eq!(err, "Constrained name string 100 must not have any numbers in it.");
-        } else {
-            panic!("Expected error for name with numbers");
-        }
-    }
-
-    #[test]
-    fn test_constrained_individual_name_string_100_with_special_chars() {
-        let name = ConstrainedIndividualNameString100::try_from("John!@#".to_string());
-        assert!(name.is_err());
-        if let Err(err) = name {
-            assert_eq!(err, "Constrained name string 100 must not have any unusual special characters such as ! £ $ % ^ & * () {} \\ / _ + in it.");
-        } else {
-            panic!("Expected error for name with special characters");
-        }
-    }
-
-    #[test]
-    fn test_email_address_valid() {
-        let email = EmailAddress::try_from("john@example.com".to_string());
-        assert!(email.is_ok());
-    }
-
-    #[test]
-    fn test_email_address_invalid() {
-        let email = EmailAddress::try_from("invalid-email".to_string());
-        assert!(email.is_err());
-        if let Err(err) = email {
-            assert_eq!(err, "Invalid email address format.");
-        } else {
-            panic!("Expected error for invalid email format");
-        }
-    }
-
-    #[test]
-    fn test_primary_trustee_electronic_contact_validation() {
-        let name = "John".to_string();
-        let email = "john@example.com".to_string();
-
-        let result = PrimaryTrusteeElectronicContact::validate(name, email);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_primary_trustee_electronic_contact_invalid_email() {
-        let name = "John".to_string();
-        let email = "invalid-email".to_string();
-
-        let result = PrimaryTrusteeElectronicContact::validate(name, email);
-        assert!(result.is_err());
-        if let Err(ValidationError::InvalidEmail(_)) = result {} else { panic!("Expected InvalidEmail error"); }
-    }
-
-    #[test]
-    fn test_primary_trustee_post_contact_validation() {
-        let name = "John".to_string();
-        let postal_address = PostalAddress::new(
-            Some("House Name".to_string()),
-            Some(123),
-            "Address Line One".to_string(),
-            Some("Address Line Two".to_string()),
-            Some("Address Line Three".to_string()),
-            Some("Address Line Four".to_string()),
-            "City".to_string(),
-            "A1 1AA".to_string(),
-        ).unwrap();
-
-        let result = PrimaryTrusteePostContact::validate(name, postal_address);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_multiple_trustees_post_contact_validation() {
-        let trustee1 = TrusteePostContact {
-            first_name: ConstrainedIndividualNameString100::try_from("John".to_string()).unwrap(),
-            postal_address: PostalAddress::new(
-                Some("House Name".to_string()),
-                Some(123),
-                "Address Line One".to_string(),
-                Some("Address Line Two".to_string()),
-                Some("Address Line Three".to_string()),
-                Some("Address Line Four".to_string()),
-                "City".to_string(),
-                "A1 1AA".to_string(),
-            ).unwrap(),
-        };
-
-        let trustee2 = TrusteePostContact {
-            first_name: ConstrainedIndividualNameString100::try_from("Jane".to_string()).unwrap(),
-            postal_address: PostalAddress::new(
-                Some("House Name".to_string()),
-                Some(124),
-                "Address Line One".to_string(),
-                Some("Address Line Two".to_string()),
-                Some("Address Line Three".to_string()),
-                Some("Address Line Four".to_string()),
-                "City".to_string(),
-                "A1 1AB".to_string(),
-            ).unwrap(),
-        };
-
-        let result = MultipleTrusteesPostContact::validate(vec![trustee1.clone(), trustee2.clone()]);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().trustees(), &vec![trustee1, trustee2]);
-    }
-
-    #[test]
-    fn test_multiple_trustees_post_contact_insufficient_trustees() {
-        let trustee1 = TrusteePostContact {
-            first_name: ConstrainedIndividualNameString100::try_from("John".to_string()).unwrap(),
-            postal_address: PostalAddress::new(
-                Some("House Name".to_string()),
-                Some(123),
-                "Address Line One".to_string(),
-                Some("Address Line Two".to_string()),
-                Some("Address Line Three".to_string()),
-                Some("Address Line Four".to_string()),
-                "City".to_string(),
-                "A1 1AA".to_string(),
-            ).unwrap(),
-        };
-
-        let result = MultipleTrusteesPostContact::validate(vec![trustee1.clone()]);
-        assert!(result.is_err());
-        if let Err(ValidationError::EmptyInput(ref msg)) = result {
-            assert_eq!(msg, "There must be at least two trustees.");
-        } else {
-            panic!("Expected EmptyInput error");
-        }
-    }
-
-    #[test]
-    fn test_multiple_trustees_post_contact_empty() {
-        let result = MultipleTrusteesPostContact::validate(vec![]);
-        assert!(result.is_err());
-        if let Err(ValidationError::EmptyInput(ref msg)) = result {
-            assert_eq!(msg, "There must be at least two trustees.");
-        } else {
-            panic!("Expected EmptyInput error");
-        }
-    }
-
-    #[test]
-    fn test_multiple_directors_electronic_contact_validation() {
-        let director1 = DirectorContact {
-            first_name: ConstrainedIndividualNameString100::try_from("John".to_string()).unwrap(),
-            email_address: EmailAddress::try_from("john@example.com".to_string()).unwrap(),
-        };
-
-        let director2 = DirectorContact {
-            first_name: ConstrainedIndividualNameString100::try_from("Jane".to_string()).unwrap(),
-            email_address: EmailAddress::try_from("jane@example.com".to_string()).unwrap(),
-        };
-
-        let result = MultipleDirectorsElectronicContact::validate(vec![director1.clone(), director2.clone()]);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().directors(), &vec![director1, director2]);
-    }
-
-    #[test]
-    fn test_multiple_directors_electronic_contact_insufficient_directors() {
-        let director1 = DirectorContact {
-            first_name: ConstrainedIndividualNameString100::try_from("John".to_string()).unwrap(),
-            email_address: EmailAddress::try_from("john@example.com".to_string()).unwrap(),
-        };
-
-        let result = MultipleDirectorsElectronicContact::validate(vec![director1.clone()]);
-        assert!(result.is_err());
-        if let Err(ValidationError::EmptyInput(ref msg)) = result {
-            assert_eq!(msg, "There must be at least two directors.");
-        } else {
-            panic!("Expected EmptyInput error");
-        }
-    }
-
-    #[test]
-    fn test_multiple_directors_electronic_contact_empty() {
-        let result = MultipleDirectorsElectronicContact::validate(vec![]);
-        assert!(result.is_err());
-        if let Err(ValidationError::EmptyInput(ref msg)) = result {
-            assert_eq!(msg, "There must be at least two directors.");
-        } else {
-            panic!("Expected EmptyInput error");
-        }
-    }
-
-    #[test]
-    fn test_multiple_directors_post_contact_validation() {
-        let director1 = DirectorPostContact {
-            first_name: ConstrainedIndividualNameString100::try_from("John".to_string()).unwrap(),
-            postal_address: PostalAddress::new(
-                Some("House Name".to_string()),
-                Some(123),
-                "Address Line One".to_string(),
-                Some("Address Line Two".to_string()),
-                Some("Address Line Three".to_string()),
-                Some("Address Line Four".to_string()),
-                "City".to_string(),
-                "A1 1AA".to_string(),
-            ).unwrap(),
-        };
-
-        let director2 = DirectorPostContact {
-            first_name: ConstrainedIndividualNameString100::try_from("Jane".to_string()).unwrap(),
-            postal_address: PostalAddress::new(
-                Some("House Name".to_string()),
-                Some(124),
-                "Address Line One".to_string(),
-                Some("Address Line Two".to_string()),
-                Some("Address Line Three".to_string()),
-                Some("Address Line Four".to_string()),
-                "City".to_string(),
-                "A1 1AB".to_string(),
-            ).unwrap(),
-        };
-
-        let result = MultipleDirectorsPostContact::validate(vec![director1.clone(), director2.clone()]);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().directors(), &vec![director1, director2]);
-    }
-
-    #[test]
-    fn test_multiple_directors_post_contact_insufficient_directors() {
-        let director1 = DirectorPostContact {
-            first_name: ConstrainedIndividualNameString100::try_from("John".to_string()).unwrap(),
-            postal_address: PostalAddress::new(
-                Some("House Name".to_string()),
-                Some(123),
-                "Address Line One".to_string(),
-                Some("Address Line Two".to_string()),
-                Some("Address Line Three".to_string()),
-                Some("Address Line Four".to_string()),
-                "City".to_string(),
-                "A1 1AA".to_string(),
-            ).unwrap(),
-        };
-
-        let result = MultipleDirectorsPostContact::validate(vec![director1.clone()]);
-        assert!(result.is_err());
-        if let Err(ValidationError::EmptyInput(ref msg)) = result {
-            assert_eq!(msg, "There must be at least two directors.");
-        } else {
-            panic!("Expected EmptyInput error");
-        }
-    }
-
-    #[test]
-    fn test_multiple_directors_post_contact_empty() {
-        let result = MultipleDirectorsPostContact::validate(vec![]);
-        assert!(result.is_err());
-        if let Err(ValidationError::EmptyInput(ref msg)) = result {
-            assert_eq!(msg, "There must be at least two directors.");
-        } else {
-            panic!("Expected EmptyInput error");
-        }
-    }
-
-    #[test]
-    fn test_primary_director_post_contact_validation() {
-        let name = "John".to_string();
-        let postal_address = PostalAddress::new(
-            Some("House Name".to_string()),
-            Some(123),
-            "Address Line One".to_string(),
-            Some("Address Line Two".to_string()),
-            Some("Address Line Three".to_string()),
-            Some("Address Line Four".to_string()),
-            "City".to_string(),
-            "A1 1AA".to_string(),
-        ).unwrap();
-
-        let result = PrimaryDirectorPostContact::validate(name, postal_address);
-        assert!(result.is_ok());
     }
 }

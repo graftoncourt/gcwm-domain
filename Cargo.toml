@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 serde = { version = "1.0.203", features = ["derive"] }
 regex = "1.10.5"
+chrono = { version="0.4.38", features = ["serde"] }
